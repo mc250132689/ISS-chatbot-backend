@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data.db")  # SQLite default
 SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 
@@ -96,7 +96,7 @@ os.makedirs("./data", exist_ok=True)
 faiss_index = None
 mapping = []
 
-# Load static knowledge base if DB empty
+# Load static knowledge base
 kb_file = "./data/knowledge_base.json"
 if os.path.exists(kb_file):
     with open(kb_file, "r", encoding="utf-8") as f:
