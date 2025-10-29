@@ -1,25 +1,30 @@
 import os
 import json
-import re
-import requests
 from datetime import datetime
-from fastapi import FastAPI, Form
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from huggingface_hub import InferenceClient
 
 # ==============================
-# Configuration
+# CONFIG
 # ==============================
 HF_TOKEN = os.getenv("HF_TOKEN") or "your_huggingface_token_here"
-HF_MODEL = "mistralai/Mistral-7B-Instruct"   # ✅ bilingual + active on new router
-HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
+
+# Initialize Hugging Face client
+client = InferenceClient(
+    model=MODEL_NAME,
+    token=HF_TOKEN,
+    provider="featherless-ai",  # ✅ must use new provider
+)
 
 LOG_FILE = "chat_logs.json"
 
 # ==============================
-# App setup
+# APP SETUP
 # ==============================
-app = FastAPI(title="🕌 Islamic Spiritual Sickness Chatbot (HF Router API)")
+app = FastAPI(title="🕌 Islamic Spiritual Sickness Chatbot (2025-HF)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,19 +35,19 @@ app.add_middleware(
 )
 
 # ==============================
-# Schema
+# SCHEMA
 # ==============================
 class ChatRequest(BaseModel):
     message: str
 
 # ==============================
-# Helpers
+# HELPERS
 # ==============================
 def detect_language(text: str) -> str:
-    malay_words = [
-        "mimpi","saya","anda","apa","kenapa","bila","ruqyah","sakit","jin","gangguan","solat","doa","hati"
+    malay_keywords = [
+        "mimpi","ruqyah","jin","sihir","doa","solat","sakit","gangguan","syaitan","hati","tidur"
     ]
-    return "ms" if any(w in text.lower() for w in malay_words) else "en"
+    return "ms" if any(w in text.lower() for w in malay_keywords) else "en"
 
 def log_to_json(user_message: str, ai_reply: str, lang: str):
     entry = {
@@ -61,60 +66,49 @@ def log_to_json(user_message: str, ai_reply: str, lang: str):
     json.dump(logs, open(LOG_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
 # ==============================
-# Query Hugging Face Router
+# MAIN CHAT FUNCTION
 # ==============================
-def query_huggingface(prompt: str, lang: str = "en"):
+def ask_model(prompt: str, lang: str) -> str:
     try:
-        headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type": "application/json",
-        }
+        system_prompt = (
+            "Anda ialah pembantu Islam yang memahami Bahasa Melayu. "
+            "Bantu pengguna memahami mimpi, gangguan spiritual, ruqyah, dan penyembuhan Islam "
+            "berdasarkan Al-Quran dan Sunnah."
+            if lang == "ms" else
+            "You are an Islamic assistant that interprets dreams and spiritual sickness "
+            "based on Qur'an and Sunnah. Reply politely and concisely."
+        )
 
-        if lang == "ms":
-            system_prompt = (
-                "Anda ialah pembantu Islam yang memahami Bahasa Melayu. "
-                "Bantu pengguna memahami mimpi, gangguan spiritual, ruqyah, dan penyembuhan Islam "
-                "berdasarkan Al-Quran dan Sunnah."
-            )
-        else:
-            system_prompt = (
-                "You are an Islamic assistant who helps interpret dreams and identify spiritual sickness "
-                "based on the Qur'an and Sunnah. Reply politely and clearly."
-            )
-
-        payload = {
-            "inputs": f"{system_prompt}\n\nUser: {prompt}\nAssistant:",
-            "parameters": {"max_new_tokens": 200, "temperature": 0.7},
-        }
-
-        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-
-        data = response.json()
-        if isinstance(data, list) and "generated_text" in data[0]:
-            return data[0]["generated_text"]
-        if isinstance(data, dict) and "generated_text" in data:
-            return data["generated_text"]
-        return str(data)
-
-    except requests.exceptions.RequestException as e:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=200,
+            temperature=0.7,
+        )
+        return completion.choices[0].message["content"].strip()
+    except Exception as e:
         return f"⚠️ Ralat pelayan Hugging Face: {e}"
 
 # ==============================
-# Routes
+# ROUTES
 # ==============================
 @app.get("/")
 def home():
-    return {"message": "🕌 Islamic Spiritual Sickness Chatbot Backend is running."}
+    return {"message": "🕌 Islamic Spiritual Sickness Chatbot Backend (HF 2025) is running."}
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
     user_message = request.message.strip()
     if not user_message:
         return {"reply": "Sila masukkan soalan anda."}
+
     lang = detect_language(user_message)
-    ai_reply = query_huggingface(user_message, lang)
+    ai_reply = ask_model(user_message, lang)
     log_to_json(user_message, ai_reply, lang)
+
     return {"reply": ai_reply or "Maaf, saya tidak dapat memahami pertanyaan anda."}
 
 @app.get("/logs")
