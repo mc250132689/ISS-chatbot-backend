@@ -28,7 +28,7 @@ headers = {
     "Content-Type": "application/json"
 }
 
-HF_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL_NAME}"
+HF_URL = "https://router.huggingface.co/hf-inference/models/..."
 
 # --- Root route ---
 @app.get("/")
