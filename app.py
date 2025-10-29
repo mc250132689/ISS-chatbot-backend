@@ -11,7 +11,7 @@ from pydantic import BaseModel
 HF_TOKEN = os.getenv("HF_TOKEN") or "your_huggingface_token_here"
 
 # Use a lightweight multilingual model for Render free tier
-HF_MODEL = os.getenv("HF_MODEL") or "distilbert-base-multilingual-cased"
+HF_MODEL = os.getenv("HF_MODEL") or "facebook/blenderbot-400M-distill"
 
 # ✅ New Hugging Face Inference Providers endpoint (Jan 2025 update)
 HF_API_URL = f"https://router.huggingface.co/hf-inference/{HF_MODEL}"
