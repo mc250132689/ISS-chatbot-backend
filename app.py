@@ -7,18 +7,23 @@ from pydantic import BaseModel
 # ==============================
 # Configuration
 # ==============================
+# Use environment variable or fallback token
 HF_TOKEN = os.getenv("HF_TOKEN") or "your_huggingface_token_here"
-HF_MODEL = "bert-base-multilingual-cased"  # You can use any model name here
-HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+
+# Use a lightweight multilingual model for Render free tier
+HF_MODEL = os.getenv("HF_MODEL") or "distilbert-base-multilingual-cased"
+
+# ✅ New Hugging Face Inference Providers endpoint (Jan 2025 update)
+HF_API_URL = f"https://router.huggingface.co/hf-inference/{HF_MODEL}"
 
 # ==============================
 # App setup
 # ==============================
-app = FastAPI(title="Islamic Spiritual Sickness Chatbot (Lightweight)")
+app = FastAPI(title="🕌 Islamic Spiritual Sickness Chatbot (Lightweight)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (frontend)
+    allow_origins=["*"],  # allow all origins (for your frontend)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +39,7 @@ class ChatRequest(BaseModel):
 # Hugging Face Query Function
 # ==============================
 def query_huggingface(prompt: str):
+    """Send a prompt to Hugging Face Inference Providers API."""
     try:
         headers = {
             "Authorization": f"Bearer {HF_TOKEN}",
@@ -46,19 +52,28 @@ def query_huggingface(prompt: str):
 
         data = response.json()
 
-        # Handle text generation or classification outputs gracefully
+        # Handle both text-generation and classification outputs
         if isinstance(data, list):
+            # Text generation
             if "generated_text" in data[0]:
                 return data[0]["generated_text"]
+            # Classification
             elif "label" in data[0]:
                 return data[0]["label"]
-        elif isinstance(data, dict) and "generated_text" in data:
-            return data["generated_text"]
+
+        elif isinstance(data, dict):
+            # Some models return directly a dict
+            if "generated_text" in data:
+                return data["generated_text"]
+            elif "label" in data:
+                return data["label"]
 
         return str(data)
 
     except requests.exceptions.RequestException as e:
         return f"Ralat pelayan Hugging Face: {e}"
+    except ValueError:
+        return "Ralat pelayan: Tidak dapat memproses respons daripada Hugging Face."
 
 # ==============================
 # Routes
@@ -77,7 +92,7 @@ async def chat(request: ChatRequest):
     return {"reply": ai_reply or "Maaf, saya tidak dapat memahami pertanyaan anda."}
 
 # ==============================
-# Form test route (optional)
+# Simple HTML form test route
 # ==============================
 @app.post("/token")
 async def token(message: str = Form(...)):
