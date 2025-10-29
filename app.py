@@ -9,9 +9,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 import jwt
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
+import difflib
 
 # Load env
 from dotenv import load_dotenv
@@ -75,27 +73,14 @@ def verify_token(token: str):
         return None
 
 # RAG setup
-EMBED_MODEL = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-INDEX_PATH = os.path.join(os.path.dirname(__file__), 'data', 'knowledge_index.faiss')
-MAPPING_PATH = os.path.join(os.path.dirname(__file__), 'data', 'knowledge_mapping.json')
-faiss_index = None
-mapping = []
-
-def build_index_from_db(db: Session):
-    global faiss_index, mapping
-    rows = db.query(KBEntry).all()
-    mapping = [{'title': r.title, 'content': r.content} for r in rows]
+def retrieve_context(query, top_k=3):
+    """Find closest KB entries by fuzzy matching (no embeddings)."""
     if not mapping:
-        faiss_index = None
-        return
-    texts = [m['content'] for m in mapping]
-    emb = EMBED_MODEL.encode(texts, convert_to_numpy=True).astype('float32')
-    idx = faiss.IndexFlatL2(emb.shape[1])
-    idx.add(emb)
-    faiss.write_index(idx, INDEX_PATH)
-    with open(MAPPING_PATH, 'w', encoding='utf-8') as f:
-        json.dump(mapping, f, ensure_ascii=False, indent=2)
-    faiss_index = idx
+        return ''
+    # simple text match using difflib
+    scored = [(difflib.SequenceMatcher(None, query, m['content']).ratio(), m) for m in mapping]
+    top = sorted(scored, key=lambda x: x[0], reverse=True)[:top_k]
+    return '\n'.join([t[1]['content'] for t in top])
 
 # Initialize index from DB or fallback to static KB file
 def init_index():
