@@ -1,79 +1,85 @@
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import requests
 import os
+import requests
+from fastapi import FastAPI, Form
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-# --- Basic FastAPI setup ---
-app = FastAPI(title="Islamic Spiritual Sickness Chatbot")
+# ==============================
+# Configuration
+# ==============================
+HF_TOKEN = os.getenv("HF_TOKEN") or "your_huggingface_token_here"
+HF_MODEL = "bert-base-multilingual-cased"  # You can use any model name here
+HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
 
-# --- Allow all CORS origins (for frontend) ---
+# ==============================
+# App setup
+# ==============================
+app = FastAPI(title="Islamic Spiritual Sickness Chatbot (Lightweight)")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # you can restrict to your frontend domain
+    allow_origins=["*"],  # Allow all origins (frontend)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Hugging Face Config ---
-HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
-MODEL_NAME = "microsoft/DialoGPT-small"  # you can replace with your own model
+# ==============================
+# Schema
+# ==============================
+class ChatRequest(BaseModel):
+    message: str
 
-if not HF_API_KEY:
-    print("⚠️ WARNING: HUGGINGFACE_API_KEY is missing in environment variables.")
-
-headers = {
-    "Authorization": f"Bearer {HF_API_KEY}",
-    "Content-Type": "application/json"
-}
-
-HF_URL = "https://router.huggingface.co/hf-inference/models/..."
-
-# --- Root route ---
-@app.get("/")
-async def root():
-    return {"message": "🕌 Islamic Spiritual Sickness Chatbot API is running."}
-
-# --- Chat endpoint ---
-@app.post("/chat")
-async def chat(request: Request):
+# ==============================
+# Hugging Face Query Function
+# ==============================
+def query_huggingface(prompt: str):
     try:
-        data = await request.json()
-        user_input = data.get("message", "").strip()
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        payload = {"inputs": prompt}
 
-        if not user_input:
-            return JSONResponse(content={"reply": "Sila masukkan soalan anda."}, status_code=400)
+        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
 
-        payload = {"inputs": user_input}
+        data = response.json()
 
-        response = requests.post(HF_URL, headers=headers, json=payload, timeout=30)
+        # Handle text generation or classification outputs gracefully
+        if isinstance(data, list):
+            if "generated_text" in data[0]:
+                return data[0]["generated_text"]
+            elif "label" in data[0]:
+                return data[0]["label"]
+        elif isinstance(data, dict) and "generated_text" in data:
+            return data["generated_text"]
 
-        if response.status_code != 200:
-            print("HF API ERROR:", response.status_code, response.text)
-            return JSONResponse(
-                content={"reply": f"Ralat pelayan Hugging Face: {response.status_code}"},
-                status_code=500
-            )
+        return str(data)
 
-        result = response.json()
-        # Some HF models return a list; handle both cases
-        if isinstance(result, list) and len(result) > 0:
-            bot_reply = result[0].get("generated_text", "Maaf, tiada jawapan dijumpai.")
-        elif isinstance(result, dict) and "generated_text" in result:
-            bot_reply = result["generated_text"]
-        else:
-            bot_reply = "Maaf, tiada jawapan dari model."
+    except requests.exceptions.RequestException as e:
+        return f"Ralat pelayan Hugging Face: {e}"
 
-        return {"reply": bot_reply}
+# ==============================
+# Routes
+# ==============================
+@app.get("/")
+def home():
+    return {"message": "🕌 Islamic Spiritual Sickness Chatbot Backend is running."}
 
-    except Exception as e:
-        print("❌ Server Error:", e)
-        return JSONResponse(content={"reply": f"Ralat pelayan: {str(e)}"}, status_code=500)
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    user_message = request.message.strip()
+    if not user_message:
+        return {"reply": "Sila masukkan soalan anda."}
 
+    ai_reply = query_huggingface(user_message)
+    return {"reply": ai_reply or "Maaf, saya tidak dapat memahami pertanyaan anda."}
 
-# --- For Render deployment ---
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+# ==============================
+# Form test route (optional)
+# ==============================
+@app.post("/token")
+async def token(message: str = Form(...)):
+    ai_reply = query_huggingface(message)
+    return {"reply": ai_reply}
