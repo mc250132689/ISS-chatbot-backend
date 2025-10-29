@@ -1,71 +1,79 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import requests
 import os
 
-app = FastAPI()
+# --- Basic FastAPI setup ---
+app = FastAPI(title="Islamic Spiritual Sickness Chatbot")
 
-# ✅ Allow frontend connection (adjust to your domain if needed)
+# --- Allow all CORS origins (for frontend) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or ["https://your-frontend-domain.com"]
+    allow_origins=["*"],  # you can restrict to your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Hugging Face Inference Providers API
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct"
-HF_API_KEY = os.getenv("HF_API_KEY")
+# --- Hugging Face Config ---
+HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
+MODEL_NAME = "microsoft/DialoGPT-small"  # you can replace with your own model
 
-HEADERS = {
+if not HF_API_KEY:
+    print("⚠️ WARNING: HUGGINGFACE_API_KEY is missing in environment variables.")
+
+headers = {
     "Authorization": f"Bearer {HF_API_KEY}",
     "Content-Type": "application/json"
 }
 
-@app.get("/")
-def root():
-    return {"status": "ok", "message": "🕌 Islamic Spiritual Sickness Chatbot API (HF Providers Ready)"}
+HF_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL_NAME}"
 
+# --- Root route ---
+@app.get("/")
+async def root():
+    return {"message": "🕌 Islamic Spiritual Sickness Chatbot API is running."}
+
+# --- Chat endpoint ---
 @app.post("/chat")
 async def chat(request: Request):
-    data = await request.json()
-    user_message = data.get("message", "").strip()
-
-    if not user_message:
-        return {"response": "Sila masukkan soalan atau pertanyaan anda."}
-
-    prompt = f"""
-    You are an Islamic counselor that helps identify and explain possible spiritual sicknesses (penyakit rohani)
-    according to Islamic principles and ruqyah syar'iyyah.
-    Respond calmly and respectfully, using the same language as the user (Malay or English).
-    
-    Question: {user_message}
-    Answer:
-    """
-
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 200, "temperature": 0.7}
-    }
-
     try:
-        response = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=60)
+        data = await request.json()
+        user_input = data.get("message", "").strip()
+
+        if not user_input:
+            return JSONResponse(content={"reply": "Sila masukkan soalan anda."}, status_code=400)
+
+        payload = {"inputs": user_input}
+
+        response = requests.post(HF_URL, headers=headers, json=payload, timeout=30)
+
+        if response.status_code != 200:
+            print("HF API ERROR:", response.status_code, response.text)
+            return JSONResponse(
+                content={"reply": f"Ralat pelayan Hugging Face: {response.status_code}"},
+                status_code=500
+            )
+
         result = response.json()
-
-        # Handle different HF response formats
-        reply = None
-        if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
-            reply = result[0]["generated_text"]
+        # Some HF models return a list; handle both cases
+        if isinstance(result, list) and len(result) > 0:
+            bot_reply = result[0].get("generated_text", "Maaf, tiada jawapan dijumpai.")
         elif isinstance(result, dict) and "generated_text" in result:
-            reply = result["generated_text"]
+            bot_reply = result["generated_text"]
+        else:
+            bot_reply = "Maaf, tiada jawapan dari model."
 
-        if not reply:
-            reply = "Saya tidak pasti, sila cuba semula atau gunakan bahasa yang lebih jelas."
-
-        # Clean output
-        reply = reply.split("Answer:")[-1].strip()
-        return {"response": reply}
+        return {"reply": bot_reply}
 
     except Exception as e:
-        return {"response": f"Ralat pelayan: {str(e)}"}
+        print("❌ Server Error:", e)
+        return JSONResponse(content={"reply": f"Ralat pelayan: {str(e)}"}, status_code=500)
+
+
+# --- For Render deployment ---
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
