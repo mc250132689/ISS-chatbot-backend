@@ -1,8 +1,5 @@
 fastapi
 uvicorn
-sqlalchemy
-passlib[bcrypt]
-python-dotenv
 requests
-pydantic
-PyJWT
+python-dotenv
+python-multipart
