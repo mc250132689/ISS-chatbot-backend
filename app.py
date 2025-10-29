@@ -8,17 +8,17 @@ from pydantic import BaseModel
 # Configuration
 # ==============================
 HF_TOKEN = os.getenv("HF_TOKEN") or "your_huggingface_token_here"
-HF_MODEL = "google/flan-t5-base"  # ✅ lightweight and supported
-HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+HF_MODEL = "google/flan-t5-base"  # ✅ supported & lightweight
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 # ==============================
 # App setup
 # ==============================
-app = FastAPI(title="Islamic Spiritual Sickness Chatbot (Lightweight)")
+app = FastAPI(title="🕌 Islamic Spiritual Sickness Chatbot (Lightweight)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins (frontend)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,17 +39,24 @@ def query_huggingface(prompt: str):
             "Authorization": f"Bearer {HF_TOKEN}",
             "Content-Type": "application/json",
         }
+
+        # System context
+        system_prompt = (
+            "You are a bilingual (Malay + English) Islamic assistant. "
+            "Respond based on ruqyah, dreams, and guidance from Islamic spiritual healing. "
+            "Keep answers short and respectful. If unclear, ask politely for clarification."
+        )
+
         payload = {
-            "inputs": f"Jawab dalam konteks rawatan Islam: {prompt}",
-            "parameters": {"max_new_tokens": 200}
+            "inputs": f"{system_prompt}\n\nUser: {prompt}\nAssistant:",
+            "parameters": {"max_new_tokens": 250, "temperature": 0.7},
         }
 
-        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
+        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
 
         data = response.json()
 
-        # Handle output shape
         if isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
             return data[0]["generated_text"]
         elif isinstance(data, dict) and "generated_text" in data:
@@ -58,7 +65,7 @@ def query_huggingface(prompt: str):
         return str(data)
 
     except requests.exceptions.RequestException as e:
-        return f"Ralat pelayan Hugging Face: {e}"
+        return f"⚠️ Ralat pelayan Hugging Face: {e}"
 
 # ==============================
 # Routes
