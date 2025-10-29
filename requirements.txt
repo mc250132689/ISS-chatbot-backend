@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+requests
+python-dotenv
+sqlalchemy
+passlib[bcrypt]
+pyjwt
+psycopg2-binary
+sentence-transformers
+faiss-cpu
